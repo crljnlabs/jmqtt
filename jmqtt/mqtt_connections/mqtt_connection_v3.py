@@ -53,14 +53,22 @@ class MQTTConnectionV3(MqttConnectionBase):
         """
         return super()._publish(topic, payload, qos, retain, None, wait_for_publish)
 
-    def subscribe(self, topic: str, on_message: Callable[[MQTTConnectionV3, Client, Any, MQTTMessage], None], qos: QoS = QoS.AtMostOnce):
+    def subscribe(self, topic: str, on_message: Callable[[MQTTConnectionV3, Client, Any, MQTTMessage], None],
+                  qos: QoS = QoS.AtMostOnce, wait_for_ack: bool = False, ack_timeout: float = 10.0):
         """
         Subscribe to a topic filter.
 
         :param topic: Topic filter to subscribe to. Wildcards '+' and '#' are allowed.
         :param on_message: Callback invoked for each matching message. Signature: (connection, client, userdata, msg) -> None.
         :param qos: Requested Quality of Service for this subscription. 0 = AtMostOnce, 1 = AtLeastOnce, 2 = ExactlyOnce.
+        :param wait_for_ack: If True, block until the broker confirms the subscription (SUBACK)
+            and raise on rejection or timeout instead of failing silently. Default keeps the
+            fire-and-forget behaviour.
+        :param ack_timeout: Seconds to wait for the SUBACK when wait_for_ack is True.
 
-        :return:
+        :raises SubscribeError: The SUBSCRIBE could not be sent (e.g. not connected).
+        :raises SubscribeTimeout: No SUBACK arrived within ack_timeout.
+        :raises SubscribeRejected: The broker refused the subscription.
+        :return: (result_code, mid) tuple, as returned by the underlying client.
         """
-        return super()._subscribe(topic, on_message, qos=qos)
+        return super()._subscribe(topic, on_message, wait_for_ack=wait_for_ack, ack_timeout=ack_timeout, qos=qos)

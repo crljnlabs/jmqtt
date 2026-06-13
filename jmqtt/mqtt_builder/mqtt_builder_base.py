@@ -199,6 +199,33 @@ class MqttBuilder(Generic[C]):
         }
         return self
 
+    def zombie_watchdog(self, enabled: bool = True, idle_factor: float = 2.0, check_interval: float | None = None) -> MqttBuilder[C]:
+        """
+        Enable an optional background guard against half-dead ("zombie") connections.
+
+        A zombie connection still reports as connected but has received no traffic
+        for far longer than the keep-alive interval - typically a silently dropped
+        TCP link. paho already reconnects on a *detected* drop; this is a
+        belt-and-suspenders for the drops its keep-alive check can miss. When it
+        triggers it forces a reconnect over the normal connect path, so on_connect
+        callbacks (re-subscribe, availability, retained state) restore operation.
+
+        Disabled by default; it only repairs the transport, never application state.
+
+        :param enabled: Turn the watchdog on (True) or off (False).
+        :param idle_factor: Multiplier on keep-alive after which a still-connected
+            link with no inbound traffic is treated as dead. 2.0 = two missed
+            keep-alive windows.
+        :param check_interval: Seconds between checks. Defaults to half keep-alive.
+        :return: MqttBuilder
+        """
+        self._config.zombie_watchdog = {
+            "enabled": enabled,
+            "idle_factor": idle_factor,
+            "check_interval": check_interval,
+        }
+        return self
+
     def build(self, **additional_client_params) -> C:
         """
         Create the client and apply configuration.
@@ -255,6 +282,13 @@ class MqttBuilder(Generic[C]):
             availability_topic,
             client_id=self._config.client_id,
         )
+
+        if self._config.has_zombie_watchdog:
+            self._connection.enable_zombie_watchdog(
+                idle_factor=self._config.zombie_watchdog["idle_factor"],
+                check_interval=self._config.zombie_watchdog["check_interval"],
+            )
+
         return self._connection
 
     def fast_build(self, **additional_client_params) -> C:

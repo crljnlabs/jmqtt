@@ -237,6 +237,22 @@ def on_msg(connection, client, userdata, msg):
 conn.subscribe("sensors/+/temp", on_message=on_msg, qos=QoS.AtLeastOnce)
 ```
 
+By default `subscribe(...)` is fire-and-forget: it returns the `(result, mid)` tuple
+from the underlying client and does not wait for the broker's SUBACK. Pass
+`wait_for_ack=True` to block until the broker confirms the subscription and to fail
+loudly instead of silently when it doesn't:
+```python
+from jmqtt import SubscribeRejected, SubscribeTimeout
+
+try:
+    conn.subscribe("sensors/+/temp", on_message=on_msg, qos=QoS.AtLeastOnce,
+                   wait_for_ack=True, ack_timeout=5.0)
+except SubscribeTimeout:
+    ...  # no SUBACK within ack_timeout
+except SubscribeRejected:
+    ...  # broker refused the subscription (SUBACK failure code)
+```
+
 ### Message object (`MQTTMessage`)
 
 Callbacks receive a `jmqtt.MQTTMessage` instance.
@@ -277,6 +293,47 @@ Identical for v3 and v5.
 ```python
 conn.close()          # loop_stop + disconnect
 ```
+
+### Health & resilience
+
+Every connection exposes a point-in-time liveness snapshot and a list of the
+topic filters it currently has registered. Use them for diagnostics and to
+confirm a reconnect actually re-subscribed:
+```python
+h = conn.health
+print(h.connected, h.connect_count, h.disconnect_count)
+print(h.seconds_since_inbound)   # time since the broker last sent any packet
+print(conn.active_subscriptions) # () until something subscribes
+
+# Force a reconnect over the normal connect path (re-fires on_connect, so all
+# re-subscribe / availability callbacks run again). Unlike disconnect()+connect()
+# this keeps the Last Will and auto-reconnect intact.
+conn.reconnect()
+```
+
+`seconds_since_inbound` reflects the time since *any* packet arrived (application
+message **or** PINGRESP), which is the correct liveness signal: on an idle but
+healthy link PINGRESP alone keeps it low; only a truly dead link lets it grow.
+
+#### Optional zombie watchdog
+
+A "zombie" connection still reports as connected but stopped receiving anything
+long ago - typically a silently dropped TCP link. paho already reconnects on a
+*detected* drop; the watchdog is an opt-in safety net for the drops its
+keep-alive check can miss. Enable it on the builder (off by default):
+```python
+conn = (
+    MQTTBuilderV3("broker.example.org", "client")
+    .keep_alive(60)
+    .auto_reconnect(min_delay=1, max_delay=30)
+    .zombie_watchdog(enabled=True, idle_factor=2.0)  # reconnect if idle > 2x keep-alive
+    .fast_build()
+)
+```
+When it fires it calls `reconnect()`; application state recovers through the
+normal on_connect callbacks and retained messages. It only ever repairs the
+transport - it never touches application state. Detection relies on the network
+loop running; a fully wedged loop thread is out of scope.
 
 ---
 

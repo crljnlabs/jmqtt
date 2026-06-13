@@ -55,7 +55,8 @@ class MQTTConnectionV5(MqttConnectionBase):
         return super()._publish(topic, payload, qos, retain, properties, wait_for_publish)
 
     def subscribe(self, topic: str, on_message: Callable[[MQTTConnectionV5, Client, Any, MQTTMessage], None], qos: QoS = QoS.AtMostOnce,
-                  no_local: bool = False, retain_as_published: bool = False, retain_handling: RetainHandling = RetainHandling.SendRetainedAlways):
+                  no_local: bool = False, retain_as_published: bool = False, retain_handling: RetainHandling = RetainHandling.SendRetainedAlways,
+                  wait_for_ack: bool = False, ack_timeout: float = 10.0):
         """
         Subscribe to a topic filter with MQTT v5 subscribe options.
 
@@ -73,9 +74,16 @@ class MQTTConnectionV5(MqttConnectionBase):
             1 = Send retained on new subscription only: Retained messages are sent only when the subscription is newly created.
                 Useful after reconnect with an existing session to avoid repeated retained floods.
             2 = Do not send retained: No retained messages are delivered at the time of subscribing.
+        :param wait_for_ack: If True, block until the broker confirms the subscription (SUBACK)
+            and raise on rejection or timeout instead of failing silently. Default keeps the
+            fire-and-forget behaviour.
+        :param ack_timeout: Seconds to wait for the SUBACK when wait_for_ack is True.
 
-        :return:
+        :raises SubscribeError: The SUBSCRIBE could not be sent (e.g. not connected).
+        :raises SubscribeTimeout: No SUBACK arrived within ack_timeout.
+        :raises SubscribeRejected: The broker refused the subscription.
+        :return: (result_code, mid) tuple, as returned by the underlying client.
         """
         options = SubscribeOptions(qos, no_local, retain_as_published, retain_handling)
-        return super()._subscribe(topic, on_message, options=options)
+        return super()._subscribe(topic, on_message, wait_for_ack=wait_for_ack, ack_timeout=ack_timeout, options=options)
 

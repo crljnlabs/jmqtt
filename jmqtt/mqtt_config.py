@@ -20,6 +20,7 @@ class MQTTConfig:
         self.password = None
 
         self.auto_reconnect = None
+        self.zombie_watchdog = None
         self.tls = None
 
         self.last_will = None
@@ -44,3 +45,7 @@ class MQTTConfig:
     def has_auto_reconnect(self):
         return (self.auto_reconnect is not None and
                 all([key in self.auto_reconnect for key in ("min_delay", "max_delay")]))
+
+    @property
+    def has_zombie_watchdog(self):
+        return self.zombie_watchdog is not None and self.zombie_watchdog.get("enabled", False)
